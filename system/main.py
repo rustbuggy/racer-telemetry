@@ -17,6 +17,8 @@ import ctypes
 from sdl2 import *
 from OpenGL.GL import *
 
+import fps_counter
+
 sys.path.append('extlib/common/python/lib')
 
 import hdlc
@@ -158,8 +160,14 @@ class Main:
 		self.buggy_drive = BuggyDrive(self.serial)
 		self.telemetry = Telemetry(self.serial)
 
-	def _init(self):
-		pass
+		t = time.time()
+
+	        # take a screenshot every minute. but start at 10 seconds (does not work in frozen mode)
+		self.autoscreenshot_period = 60.
+		self.autoscreenshot_time = t + 10.
+		self.fpscounter = fps_counter.FpsCounter()
+		self.fps_log_period = 60.
+		self.fps_log_time = t + 5.
 
 	def run(self):
 		""" this is the entry-point """
@@ -191,7 +199,7 @@ class Main:
 				logg.error("vsync failed completely. will munch cpu for lunch.")
 
 		self.keys = SDL_GetKeyboardState(None)
-		self._init()
+		self._init_gl()
 
 		#
 		# init done. start the mainloop!
@@ -228,10 +236,51 @@ class Main:
 		SDL_Quit()
 		logg.info("quit ok")
 
+	def _init_gl(self):
+		glDisable(GL_TEXTURE_2D)
+		glDisable(GL_DEPTH_TEST)
+		glDisable(GL_FOG)
+		glDisable(GL_DITHER)
+		glDisable(GL_LIGHTING)
+		glShadeModel(GL_FLAT)
+		glEnable(GL_BLEND)
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+		glEnable(GL_LINE_SMOOTH)
+		glDisable(GL_LINE_STIPPLE)
+
 	def _tick(self, dt):
 		self.telemetry.tick(dt)
 		self.buggy_drive.handle_controls(dt, self.keys)
 		self.buggy_drive.tick(dt)
+		self.fpscounter.tick(dt)
+
+		# render frame
+
+		glViewport(0, 0, self.w, self.h)
+		#self.world.render(self.w, self.h)
+
+		t = time.time()
+
+		# just log fps.
+		if self.fps_log_time < t:
+			self.fps_log_time = t + self.fps_log_period
+			logg.info("fps: %i", self.fpscounter.fps)
+
+		# save screenshot if the time cas come, but only save when working from source.
+		if self.autoscreenshot_time < t and not hasattr(sys, "frozen"):
+			self.autoscreenshot_time = t + self.autoscreenshot_period
+			self._save_screenshot("autoscreenshot_")
+
+	def _save_screenshot(self, filename_prefix="screenshot_"):
+		"""saves screenshots/filename_prefix20090404_120211_utc.png"""
+		utc = time.gmtime(time.time())
+		filename = filename_prefix + "%04i%02i%02i_%02i%02i%02i_utc.png" % \
+				(utc.tm_year, utc.tm_mon, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec)
+		logg.info("saving screenshot '%s'", filename)
+		px = glReadPixels(0, 0, self.w, self.h, GL_RGB, GL_UNSIGNED_BYTE)
+		im = Image.frombuffer("RGB", (self.w, self.h), px)
+		im.save(filename)
+
 
 
 # example on how to show a message box. of course we'll need it someday!
