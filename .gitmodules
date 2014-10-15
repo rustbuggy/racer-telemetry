@@ -1,0 +1,9 @@
+[submodule "extlib/libcopengl"]
+	path = extlib/libcopengl
+	url = git@github.com:fdkz/libcopengl.git
+[submodule "extlib/libaniplot"]
+	path = extlib/libaniplot
+	url = git@github.com:fdkz/libaniplot.git
+[submodule "extlib/common"]
+	path = extlib/common
+	url = git@github.com:rustbuggy/common.git

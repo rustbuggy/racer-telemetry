@@ -1,0 +1,6 @@
+*.py[cod]
+screenshots/*.png
+log/log-*
+build/
+dist/
+*egg-info/
