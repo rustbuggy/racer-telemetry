@@ -4,7 +4,7 @@ logg = logging.getLogger("main")
 if __name__=="__main__":
 	logging.basicConfig(level=logging.NOTSET, format="%(asctime)s %(name)s %(levelname)-5s: %(message)s")
 
-
+import os
 import sys
 import time
 import math
@@ -17,11 +17,22 @@ import ctypes
 from sdl2 import *
 from OpenGL.GL import *
 
+from PIL import Image
+
+
 import fps_counter
 
 sys.path.append('extlib/common/python/lib')
+sys.path.append('extlib/libaniplot')
+sys.path.append('extlib/libcopengl')
+sys.path.append('extlib/libgltext/pywrapper')
 
 import hdlc
+import gltext
+
+from aniplot import graph_window
+from aniplot import graph_renderer
+from aniplot import graph_channel
 
 
 parser = argparse.ArgumentParser(description="RustTelemetry", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -88,6 +99,8 @@ class BuggyDrive:
 		self.steering_cur = 0. # current front wheel steering pos degrees
 		self.thrust_cur = 0.
 
+		self.log_raw_data = False
+
 	def tick(self, dt):
 		# send motor commands
 		steering_pwm = self._steering_to_servopwm(self.steering_cur)
@@ -128,7 +141,8 @@ class BuggyDrive:
 	def _send_packet(self, data):
 		data = hdlc.add_checksum(data)
 		data = hdlc.escape_delimit(data)
-		logg.info("snd %02i: %s", len(data), data.encode("hex").upper())
+		if self.log_raw_data:
+			logg.info("snd %02i: %s", len(data), data.encode("hex").upper())
 		self.serial.write(data)
 
 	def _ease_linear_to(self, dest, src, amount):
@@ -150,8 +164,143 @@ class BuggyDrive:
 		return servopwm
 
 
+class MainWindow:
+	def __init__(self, conf, graph_channels=None):
+		self.conf = conf
+		self._w, self._h = 0., 0.
+		self.gltext = gltext.GLText(os.path.join(conf.path_data, 'font_proggy_opti_small.txt'))
+		# renders graphs, grids, legend, scrollbar, border.
+		self.grapher = graph_renderer.GraphRenderer(self.gltext)
+		self.channels = []
+		self.graph_window = None
+
+		self.ch1 = self.create_channel(frequency=60, value_min=0., value_min_raw=-1., value_max=5., value_max_raw=1., legend="fast data")
+		#self.ch2 = self.aniplot.create_channel(frequency=5, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=255., legend="slow data", color=QtGui.QColor(0, 238, 0))
+
+	def init(self):
+		self.gltext.init()
+		self.grapher.setup(self.channels)
+		# converts input events to smooth zoom/movement of the graph.
+		self.graph_window = graph_window.GraphWindow(self, font=self.gltext, graph_renderer=self.grapher, keys=None, x=0, y=0, w=10, h=10)
+
+	def tick(self, dt):
+		t = time.time()
+		self.ch1.append( math.sin(t / 0.1) )
+
+	def render(self, window_w, window_h, fps):
+		self._w, self._h = window_w, window_h
+		#glClearColor(0.8,0.8,1.8,1.0)
+		#glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+		##glColor(1,0,0,1)
+
+		#glMatrixMode(GL_PROJECTION)
+		#glLoadIdentity()
+		z_near, z_far = 101., 100000.
+		#glViewport(0, 0, self.w, self.h)
+		#glOrtho(0., self.w, self.h, 0., z_near, z_far)
+
+		#glMatrixMode(GL_MODELVIEW)
+		#glLoadIdentity()
+		#glScale(1., 1., -1.)
+
+		if self.graph_window:
+			w, h = window_w, window_h
+			if w <= 20 or h <= 20:
+				return
+
+			self.grapher.tick()
+			self.graph_window.tick()
+
+			glClearColor(0.2, 0.2, 0.2, 1.0)
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+			glViewport(0, 0, w, h)
+
+			glMatrixMode(GL_PROJECTION)
+			glLoadIdentity()
+			glOrtho(0., w, h, 0., -100, 100)
+
+			glDisable(GL_DEPTH_TEST)
+			glDisable(GL_TEXTURE_2D)
+			glDisable(GL_LIGHTING)
+
+			glMatrixMode(GL_MODELVIEW)
+			glLoadIdentity()
+			glScalef(1.,1.,-1.)
+
+			self.graph_window.x = -1
+			self.graph_window.y = h / 2.
+			self.graph_window.w = w + 2
+			self.graph_window.h = h / 2. + 2
+
+			# render 2d objects
+
+			glDisable(GL_DEPTH_TEST)
+			glDisable(GL_TEXTURE_2D)
+
+			self.graph_window.render()
+
+			glEnable(GL_TEXTURE_2D)
+			self.gltext.drawbr("fps: %.0f" % fps, w, h, fgcolor = (.9, .9, .9, 1.), bgcolor = (0.3, 0.3, 0.3, .0))
+			self.gltext.drawbm("usage: arrows, shift, mouse", w/2, h-3, fgcolor = (.5, .5, .5, 1.), bgcolor = (0., 0., 0., .0))
+
+
+	def handle_controls(self, dt, keys):
+		d = 1. * dt
+		if keys[SDL_SCANCODE_LSHIFT] or keys[SDL_SCANCODE_RSHIFT]:
+			if keys[SDL_SCANCODE_LEFT]:  self.graph_window.zoom_out(d, 0.)
+			if keys[SDL_SCANCODE_RIGHT]: self.graph_window.zoom_in(d, 0.)
+			if keys[SDL_SCANCODE_UP]:    self.graph_window.zoom_in(0., d)
+			if keys[SDL_SCANCODE_DOWN]:  self.graph_window.zoom_out(0., d)
+		else:
+			if keys[SDL_SCANCODE_LEFT]:  self.graph_window.move_by_ratio(-d, 0.)
+			if keys[SDL_SCANCODE_RIGHT]: self.graph_window.move_by_ratio(d, 0.)
+			if keys[SDL_SCANCODE_UP]:    self.graph_window.move_by_ratio(0., -d)
+			if keys[SDL_SCANCODE_DOWN]:  self.graph_window.move_by_ratio(0., d)
+
+	def event_sdl(self, event):
+		return
+
+	def gl_coordinates(self, x, y):
+		""" used by graph_renderer for some unremembered reason """
+		return x, self._h - y
+
+	def create_channel(self, frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255., legend="graph", unit="V", color=(0.5, 1., 0.5, 1.)):
+		''' Returns GraphChannel object.
+
+		    "frequency"     : sampling frequency
+		    "value_min"     : is minimum real value, for example it can be in V
+		    "value_min_raw" : is minimum raw value from ADC that corresponds to real "value_min"
+		    "value_max"     : is maximum real value, for example it can be in V
+		    "value_max_raw" : is maximum raw value from ADC that corresponds to real "value_max"
+
+		    For example with 10 bit ADC with AREF of 3.3 V these values are: value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.
+
+		    Use case:
+		        plotter = AniplotWidget()
+		        ch1 = plotter.create_channel(frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255.)
+		        ch2 = plotter.create_channel(frequency=500, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.)
+		        plotter.start()
+
+		        while 1:
+		            sample1 = some_source1.get()
+		            sample2 = some_source2.get()
+		            if sample1:
+		                ch1.append(sample1)
+		            if sample2:
+		                ch2.append(sample2)
+
+		    Data can be appended also with custom timestamp: ch1.append(sample1, time.time())
+		'''
+		channel = graph_channel.GraphChannel(frequency=frequency, legend=legend, unit=unit, color=color)
+		channel.set_mapping(value_min=value_min, value_min_raw=value_min_raw, value_max=value_max, value_max_raw=value_max_raw)
+		self.channels.append(channel)
+		return channel
+
+
 class Main:
-	def __init__(self, serial):
+	def __init__(self, conf, serial):
+		self.conf = conf
 		self.serial = serial
 		self.w = 800
 		self.h = 600
@@ -159,15 +308,20 @@ class Main:
 
 		self.buggy_drive = BuggyDrive(self.serial)
 		self.telemetry = Telemetry(self.serial)
+		self.mainwindow = MainWindow(conf)
 
 		t = time.time()
 
-	        # take a screenshot every minute. but start at 10 seconds (does not work in frozen mode)
+		# take a screenshot every minute. but start at 10 seconds (does not work in frozen mode)
 		self.autoscreenshot_period = 60.
 		self.autoscreenshot_time = t + 10.
 		self.fpscounter = fps_counter.FpsCounter()
 		self.fps_log_period = 60.
 		self.fps_log_time = t + 5.
+
+	def _init(self):
+		self._init_gl()
+		self.mainwindow.init()
 
 	def run(self):
 		""" this is the entry-point """
@@ -199,7 +353,7 @@ class Main:
 				logg.error("vsync failed completely. will munch cpu for lunch.")
 
 		self.keys = SDL_GetKeyboardState(None)
-		self._init_gl()
+		self._init()
 
 		#
 		# init done. start the mainloop!
@@ -222,6 +376,8 @@ class Main:
 				if event.type == SDL_WINDOWEVENT:
 					if event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED:
 						self.w, self.h = event.window.data1, event.window.data2
+
+				self.mainwindow.event_sdl(event)
 
 			t = time.time()
 			self._tick(t - last_t)
@@ -252,12 +408,14 @@ class Main:
 		self.telemetry.tick(dt)
 		self.buggy_drive.handle_controls(dt, self.keys)
 		self.buggy_drive.tick(dt)
+		self.mainwindow.handle_controls(dt, self.keys)
+		self.mainwindow.tick(dt)
 		self.fpscounter.tick(dt)
 
 		# render frame
 
 		glViewport(0, 0, self.w, self.h)
-		#self.world.render(self.w, self.h)
+		self.mainwindow.render(self.w, self.h, self.fpscounter.fps)
 
 		t = time.time()
 
@@ -278,9 +436,9 @@ class Main:
 				(utc.tm_year, utc.tm_mon, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec)
 		logg.info("saving screenshot '%s'", filename)
 		px = glReadPixels(0, 0, self.w, self.h, GL_RGB, GL_UNSIGNED_BYTE)
-		im = Image.frombuffer("RGB", (self.w, self.h), px)
-		im.save(filename)
+		im = Image.frombuffer("RGB", (self.w, self.h), px, "raw", "RGB", 0, -1)
 
+		im.save(os.path.join(self.conf.path_screenshots, filename))
 
 
 # example on how to show a message box. of course we'll need it someday!
@@ -288,12 +446,17 @@ class Main:
 #                     "Missing file",
 #                     "File is missing. Please reinstall the program.",
 #                     None);
+class Conf: pass
+
 
 def main(py_path):
-	w = Main(s)
+	conf = Conf()
+	conf.path_data = os.path.normpath( os.path.join(py_path, "data") )
+	conf.path_screenshots = os.path.normpath( os.path.join(py_path, "screenshots") )
+	w = Main(conf, s)
 	w.run()
 
 
-if __name__=="__main__":
-	main()
-	sys.exit(w.run())
+#if __name__=="__main__":
+#	main()
+#	sys.exit(w.run())

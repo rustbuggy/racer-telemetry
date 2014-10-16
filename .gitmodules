@@ -7,3 +7,6 @@
 [submodule "extlib/common"]
 	path = extlib/common
 	url = git@github.com:rustbuggy/common.git
+[submodule "extlib/libgltext"]
+	path = extlib/libgltext
+	url = git@github.com:fdkz/libgltext.git
