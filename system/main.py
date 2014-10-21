@@ -75,7 +75,7 @@ class Telemetry:
 		self.parser = hdlc.HdlcChecksummed()
 		self.graph_channels = []
 
-		maxvals = 65536. * 100.
+		maxvals = 1023.
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="left", color=(1., 0.8, 0.8, 1.0))
 		self.graph_channels.append(ch)
@@ -295,9 +295,9 @@ class MainWindow:
 		glScalef(1.,1.,-1.)
 
 		self.graph_window.x = -1
-		self.graph_window.y = h / 2.
+		self.graph_window.y = int(h / 2.)
 		self.graph_window.w = w + 2
-		self.graph_window.h = h / 2. + 2
+		self.graph_window.h = int(h / 2.) + 2
 
 		# render 2d objects
 
@@ -398,7 +398,9 @@ class Main:
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
 
 		logg.info("creating window")
-		window = SDL_CreateWindow(b"telemetry/drive", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, self.w, self.h, SDL_WINDOW_OPENGL)
+		window = SDL_CreateWindow(b"telemetry/drive", SDL_WINDOWPOS_UNDEFINED,
+		        SDL_WINDOWPOS_UNDEFINED, self.w, self.h, SDL_WINDOW_OPENGL|SDL_WINDOW_RESIZABLE)
+
 		if not window:
 			logg.error(SDL_GetError())
 			return -1
