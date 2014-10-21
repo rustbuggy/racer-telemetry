@@ -34,6 +34,8 @@ from aniplot import graph_window
 from aniplot import graph_renderer
 from aniplot import graph_channel
 
+import buggy_visualization
+
 
 parser = argparse.ArgumentParser(description="RustTelemetry", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--port", type=str, default="/dev/tty.usbserial-A8008iwL", help="usb serial port device eg. /dev/ttyUSB0")
@@ -75,21 +77,22 @@ class Telemetry:
 		self.parser = hdlc.HdlcChecksummed()
 		self.graph_channels = []
 
-		maxvals = 1023.
+		maxvals = 2.
+		maxvals_raw = 2.
 
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="left", color=(1., 0.8, 0.8, 1.0))
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="left", color=(1., 0.8, 0.8, 1.0))
 		self.graph_channels.append(ch)
 
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="right", color=(0.8, 1., 0.8, 1.0))
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="right", color=(0.8, 1., 0.8, 1.0))
 		self.graph_channels.append(ch)
 
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="front_left", color=(0.8, 0.8, 1.0, 1.0))
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_left", color=(0.8, 0.8, 1.0, 1.0))
 		self.graph_channels.append(ch)
 
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="front_right", color=(1., 0.8, 0.2, 1.0))
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_right", color=(1., 0.8, 0.2, 1.0))
 		self.graph_channels.append(ch)
 
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="front", color=(.2, 0.2, 1.0, 1.0))
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front", color=(.2, 0.2, 1.0, 1.0))
 		self.graph_channels.append(ch)
 
 		#self.ch2 = self.aniplot.create_channel(frequency=5, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=255., legend="slow data", color=QtGui.QColor(0, 238, 0))
@@ -113,11 +116,12 @@ class Telemetry:
 			if header == BC_TELEMETRY:
 				time, left, right, front_left, front_right, front, mc_x, mc_y, mc_dist, mc_angle, steer, steerPwm, speed, speedPwm = struct.unpack("<IiiiiiiiiiBiBi", packet[1:])
 
-				self.graph_channels[0].append(left)
-				self.graph_channels[1].append(right)
-				self.graph_channels[2].append(front_left)
-				self.graph_channels[3].append(front_right)
-				self.graph_channels[4].append(front)
+				d = 1. / 65535 / 100.
+				self.graph_channels[0].append(left * d)
+				self.graph_channels[1].append(right * d)
+				self.graph_channels[2].append(front_left * d)
+				self.graph_channels[3].append(front_right * d)
+				self.graph_channels[4].append(front * d)
 				#print("l %3.2f r %3.2f fl %3.2f fr %3.2f f %3.2f" % (left / FIX_DIV, right / FIX_DIV, front_left / FIX_DIV, front_right / FIX_DIV, front / FIX_DIV))
 				#logg.info("mc(%.2f, %.2f; %.2f, %.2f)\tsteer (%u): %3u drive (%u): %3u\n" % (mc_x / FIX_DIV, mc_y / FIX_DIV, mc_dist / FIX_DIV, mc_angle / FIX_DIV, steer, steerPwm, speed, speedPwm))
 
@@ -188,9 +192,13 @@ class BuggyDrive:
 			elif event.jaxis.axis == self.conf.joystick_pitch_axis:
 				joy_axis_changed = True
 				pitch_axis = int16_to_float(event.jaxis.value)
+			logg.info("axis %i val %5.2f" % (event.jaxis.axis, int16_to_float(event.jaxis.value)))
 
 		if event.type == SDL_JOYBUTTONDOWN:
 			logg.info("joy button %i pressed", event.jbutton.button)
+
+		#if joy_axis_changed:
+		#	logg.info("pitch %5.2f roll %5.2f" % (pitch_axis, roll_axis))
 
 	def handle_controls(self, dt, keys):
 		acceleration = 5.
@@ -258,6 +266,8 @@ class MainWindow:
 		self.graph_channels = graph_channels
 		self.graph_window = None
 
+		self.buggy_vis = buggy_visualization.BuggyVisualization()
+
 	def init(self):
 		self.gltext.init()
 		self.grapher.setup(self.graph_channels)
@@ -265,7 +275,19 @@ class MainWindow:
 		self.graph_window = graph_window.GraphWindow(self, font=self.gltext, graph_renderer=self.grapher, keys=None, x=0, y=0, w=10, h=10)
 
 	def tick(self, dt):
-		pass
+		#self.buggy_vis.set_sensor_values(dist_left, dist_left_front, dist_front, dist_right_front, dist_right)
+
+		if self.graph_channels and self.graph_channels[0].size():
+			minv, maxv, left        = self.graph_channels[0].get(-1)
+			minv, maxv, right       = self.graph_channels[1].get(-1)
+			minv, maxv, left_front  = self.graph_channels[2].get(-1)
+			minv, maxv, right_front = self.graph_channels[3].get(-1)
+			minv, maxv, front       = self.graph_channels[4].get(-1)
+			self.buggy_vis.set_sensor_values(left, left_front, front, right, right_front)
+		else:
+			self.buggy_vis.set_sensor_values(0.8, 0.5, 0.2, 0.6, 0.9)
+
+		self.buggy_vis.tick(dt)
 
 	def render(self, window_w, window_h, fps):
 		self._w, self._h = window_w, window_h
@@ -277,8 +299,23 @@ class MainWindow:
 		self.grapher.tick()
 		self.graph_window.tick()
 
-		glClearColor(0.3, 0.3, 0.3, 1.0)
+		#glClearColor(0.3, 0.3, 0.3, 1.0)
+		#glClearColor(0.2, 0.2, 0.2, 1.0)
+		glClearColor(.25, .25, .25, 1.0)
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+
+		# render buggy visualization window
+		#glDisable(GL_DEPTH_TEST)
+		#glDisable(GL_LIGHTING)
+
+		glViewport(0, int(h / 2.), w, int(h / 2.))
+		self.buggy_vis.render(w, int(h/2.))
+
+
+
+		# render graph window
+
 
 		glViewport(0, 0, w, h)
 
