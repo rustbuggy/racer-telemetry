@@ -54,8 +54,8 @@ except:
 
 
 # header bytes
-BC_TELEMETRY = 0x00
-CB_MOTOR_COMMAND = 0x01
+BC_TELEMETRY = 0x01
+CB_MOTOR_COMMAND = 0x02
 
 
 def send_packet(data):
@@ -64,13 +64,46 @@ def send_packet(data):
 	s.write(data)
 
 
+def int16_to_float(int16):
+    return int16 / 32768.
+
+
 class Telemetry:
 	""" Read telemetry from the given serial port. """
 	def __init__(self, serial):
 		self.serial = serial # opened serial port. here used for reading ONLY.
 		self.parser = hdlc.HdlcChecksummed()
+		self.graph_channels = []
+
+		maxvals = 65536. * 100.
+
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="left", color=(1., 0.8, 0.8, 1.0))
+		self.graph_channels.append(ch)
+
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="right", color=(0.8, 1., 0.8, 1.0))
+		self.graph_channels.append(ch)
+
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="front_left", color=(0.8, 0.8, 1.0, 1.0))
+		self.graph_channels.append(ch)
+
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="front_right", color=(1., 0.8, 0.2, 1.0))
+		self.graph_channels.append(ch)
+
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals, legend="front", color=(.2, 0.2, 1.0, 1.0))
+		self.graph_channels.append(ch)
+
+		#self.ch2 = self.aniplot.create_channel(frequency=5, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=255., legend="slow data", color=QtGui.QColor(0, 238, 0))
+
+	def get_telemetry_channels(self):
+		return self.graph_channels
 
 	def tick(self, dt):
+
+		#t = time.time()
+		#self.graph_channels[0].append( math.sin(t / 0.1) )
+		#self.graph_channels[1].append( math.sin(t / 0.1324) )
+
+
 		# read serial
 		data = self.serial.read(200)
 		self.parser.put(data)
@@ -78,13 +111,51 @@ class Telemetry:
 		for packet in self.parser:
 			header, = struct.unpack("<B", packet[:1])
 			if header == BC_TELEMETRY:
-				left, right, front_left, front_right = struct.unpack("<BBBB", packet[1:])
-				#llog.info("l %u r %u fl %u fr %u", left, right, front_left, front_right)
-				# TODO: create channels. append every sample.
+				time, left, right, front_left, front_right, front, mc_x, mc_y, mc_dist, mc_angle, steer, steerPwm, speed, speedPwm = struct.unpack("<IiiiiiiiiiBiBi", packet[1:])
+
+				self.graph_channels[0].append(left)
+				self.graph_channels[1].append(right)
+				self.graph_channels[2].append(front_left)
+				self.graph_channels[3].append(front_right)
+				self.graph_channels[4].append(front)
+				#print("l %3.2f r %3.2f fl %3.2f fr %3.2f f %3.2f" % (left / FIX_DIV, right / FIX_DIV, front_left / FIX_DIV, front_right / FIX_DIV, front / FIX_DIV))
+				#logg.info("mc(%.2f, %.2f; %.2f, %.2f)\tsteer (%u): %3u drive (%u): %3u\n" % (mc_x / FIX_DIV, mc_y / FIX_DIV, mc_dist / FIX_DIV, mc_angle / FIX_DIV, steer, steerPwm, speed, speedPwm))
+
+	def _create_channel(self, frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255., legend="graph", unit="V", color=(0.5, 1., 0.5, 1.)):
+		''' Returns GraphChannel object.
+
+			"frequency"     : sampling frequency
+			"value_min"     : is minimum real value, for example it can be in V
+			"value_min_raw" : is minimum raw value from ADC that corresponds to real "value_min"
+			"value_max"     : is maximum real value, for example it can be in V
+			"value_max_raw" : is maximum raw value from ADC that corresponds to real "value_max"
+
+			For example with 10 bit ADC with AREF of 3.3 V these values are: value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.
+
+			Use case:
+				plotter = AniplotWidget()
+				ch1 = plotter.create_channel(frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255.)
+				ch2 = plotter.create_channel(frequency=500, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.)
+				plotter.start()
+
+				while 1:
+					sample1 = some_source1.get()
+					sample2 = some_source2.get()
+					if sample1:
+						ch1.append(sample1)
+					if sample2:
+						ch2.append(sample2)
+
+			Data can be appended also with custom timestamp: ch1.append(sample1, time.time())
+		'''
+		channel = graph_channel.GraphChannel(frequency=frequency, legend=legend, unit=unit, color=color)
+		channel.set_mapping(value_min=value_min, value_min_raw=value_min_raw, value_max=value_max, value_max_raw=value_max_raw)
+		return channel
 
 
 class BuggyDrive:
-	def __init__(self, serial):
+	def __init__(self, conf, serial):
+		self.conf = conf
 		self.serial = serial # opened serial port. here used for sending ONLY.
 		self.thrust_max = 10.
 		self.thrust_min = -10.
@@ -107,6 +178,19 @@ class BuggyDrive:
 		drive_pwm = self._thrust_to_motorpwm(self.thrust_cur)
 		motor_command = struct.pack("<BBB", CB_MOTOR_COMMAND, steering_pwm, drive_pwm)
 		self._send_packet(motor_command)
+
+	def event_sdl(self, event):
+		joy_axis_changed = False
+		if event.type == SDL_JOYAXISMOTION:
+			if event.jaxis.axis == self.conf.joystick_roll_axis:
+				joy_axis_changed = True
+				roll_axis = int16_to_float(event.jaxis.value)
+			elif event.jaxis.axis == self.conf.joystick_pitch_axis:
+				joy_axis_changed = True
+				pitch_axis = int16_to_float(event.jaxis.value)
+
+		if event.type == SDL_JOYBUTTONDOWN:
+			logg.info("joy button %i pressed", event.jbutton.button)
 
 	def handle_controls(self, dt, keys):
 		acceleration = 5.
@@ -171,79 +255,60 @@ class MainWindow:
 		self.gltext = gltext.GLText(os.path.join(conf.path_data, 'font_proggy_opti_small.txt'))
 		# renders graphs, grids, legend, scrollbar, border.
 		self.grapher = graph_renderer.GraphRenderer(self.gltext)
-		self.channels = []
+		self.graph_channels = graph_channels
 		self.graph_window = None
-
-		self.ch1 = self.create_channel(frequency=60, value_min=0., value_min_raw=-1., value_max=5., value_max_raw=1., legend="fast data")
-		#self.ch2 = self.aniplot.create_channel(frequency=5, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=255., legend="slow data", color=QtGui.QColor(0, 238, 0))
 
 	def init(self):
 		self.gltext.init()
-		self.grapher.setup(self.channels)
+		self.grapher.setup(self.graph_channels)
 		# converts input events to smooth zoom/movement of the graph.
 		self.graph_window = graph_window.GraphWindow(self, font=self.gltext, graph_renderer=self.grapher, keys=None, x=0, y=0, w=10, h=10)
 
 	def tick(self, dt):
-		t = time.time()
-		self.ch1.append( math.sin(t / 0.1) )
+		pass
 
 	def render(self, window_w, window_h, fps):
 		self._w, self._h = window_w, window_h
-		#glClearColor(0.8,0.8,1.8,1.0)
-		#glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-		##glColor(1,0,0,1)
 
-		#glMatrixMode(GL_PROJECTION)
-		#glLoadIdentity()
-		z_near, z_far = 101., 100000.
-		#glViewport(0, 0, self.w, self.h)
-		#glOrtho(0., self.w, self.h, 0., z_near, z_far)
+		w, h = window_w, window_h
+		if w <= 20 or h <= 20:
+			return
 
-		#glMatrixMode(GL_MODELVIEW)
-		#glLoadIdentity()
-		#glScale(1., 1., -1.)
+		self.grapher.tick()
+		self.graph_window.tick()
 
-		if self.graph_window:
-			w, h = window_w, window_h
-			if w <= 20 or h <= 20:
-				return
+		glClearColor(0.3, 0.3, 0.3, 1.0)
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-			self.grapher.tick()
-			self.graph_window.tick()
+		glViewport(0, 0, w, h)
 
-			glClearColor(0.2, 0.2, 0.2, 1.0)
-			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+		glMatrixMode(GL_PROJECTION)
+		glLoadIdentity()
+		glOrtho(0., w, h, 0., -100, 100)
 
-			glViewport(0, 0, w, h)
+		glDisable(GL_DEPTH_TEST)
+		glDisable(GL_TEXTURE_2D)
+		glDisable(GL_LIGHTING)
 
-			glMatrixMode(GL_PROJECTION)
-			glLoadIdentity()
-			glOrtho(0., w, h, 0., -100, 100)
+		glMatrixMode(GL_MODELVIEW)
+		glLoadIdentity()
+		glScalef(1.,1.,-1.)
 
-			glDisable(GL_DEPTH_TEST)
-			glDisable(GL_TEXTURE_2D)
-			glDisable(GL_LIGHTING)
+		self.graph_window.x = -1
+		self.graph_window.y = h / 2.
+		self.graph_window.w = w + 2
+		self.graph_window.h = h / 2. + 2
 
-			glMatrixMode(GL_MODELVIEW)
-			glLoadIdentity()
-			glScalef(1.,1.,-1.)
+		# render 2d objects
 
-			self.graph_window.x = -1
-			self.graph_window.y = h / 2.
-			self.graph_window.w = w + 2
-			self.graph_window.h = h / 2. + 2
+		glDisable(GL_DEPTH_TEST)
+		glDisable(GL_TEXTURE_2D)
 
-			# render 2d objects
+		self.graph_window.render()
 
-			glDisable(GL_DEPTH_TEST)
-			glDisable(GL_TEXTURE_2D)
-
-			self.graph_window.render()
-
-			glEnable(GL_TEXTURE_2D)
-			self.gltext.drawbr("fps: %.0f" % fps, w, h, fgcolor = (.9, .9, .9, 1.), bgcolor = (0.3, 0.3, 0.3, .0))
-			self.gltext.drawbm("usage: arrows, shift, mouse", w/2, h-3, fgcolor = (.5, .5, .5, 1.), bgcolor = (0., 0., 0., .0))
-
+		glEnable(GL_TEXTURE_2D)
+		self.gltext.drawbr("fps: %.0f" % fps, w, h, fgcolor = (.9, .9, .9, 1.), bgcolor = (0.3, 0.3, 0.3, .0))
+		self.gltext.drawbm("usage: arrows, shift, mouse", w/2, h-3, fgcolor = (.5, .5, .5, 1.), bgcolor = (0., 0., 0., .0))
 
 	def handle_controls(self, dt, keys):
 		d = 1. * dt
@@ -265,38 +330,6 @@ class MainWindow:
 		""" used by graph_renderer for some unremembered reason """
 		return x, self._h - y
 
-	def create_channel(self, frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255., legend="graph", unit="V", color=(0.5, 1., 0.5, 1.)):
-		''' Returns GraphChannel object.
-
-		    "frequency"     : sampling frequency
-		    "value_min"     : is minimum real value, for example it can be in V
-		    "value_min_raw" : is minimum raw value from ADC that corresponds to real "value_min"
-		    "value_max"     : is maximum real value, for example it can be in V
-		    "value_max_raw" : is maximum raw value from ADC that corresponds to real "value_max"
-
-		    For example with 10 bit ADC with AREF of 3.3 V these values are: value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.
-
-		    Use case:
-		        plotter = AniplotWidget()
-		        ch1 = plotter.create_channel(frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255.)
-		        ch2 = plotter.create_channel(frequency=500, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.)
-		        plotter.start()
-
-		        while 1:
-		            sample1 = some_source1.get()
-		            sample2 = some_source2.get()
-		            if sample1:
-		                ch1.append(sample1)
-		            if sample2:
-		                ch2.append(sample2)
-
-		    Data can be appended also with custom timestamp: ch1.append(sample1, time.time())
-		'''
-		channel = graph_channel.GraphChannel(frequency=frequency, legend=legend, unit=unit, color=color)
-		channel.set_mapping(value_min=value_min, value_min_raw=value_min_raw, value_max=value_max, value_max_raw=value_max_raw)
-		self.channels.append(channel)
-		return channel
-
 
 class Main:
 	def __init__(self, conf, serial):
@@ -305,10 +338,11 @@ class Main:
 		self.w = 800
 		self.h = 600
 		self.keys = None
+		self.joystick = None
 
-		self.buggy_drive = BuggyDrive(self.serial)
+		self.buggy_drive = BuggyDrive(conf, serial)
 		self.telemetry = Telemetry(self.serial)
-		self.mainwindow = MainWindow(conf)
+		self.mainwindow = MainWindow(conf, self.telemetry.get_telemetry_channels())
 
 		t = time.time()
 
@@ -323,13 +357,42 @@ class Main:
 		self._init_gl()
 		self.mainwindow.init()
 
+	def _open_joystick(self, joystick_index):
+		n = SDL_NumJoysticks()
+		logg.info("num joysticks: %u" % (n))
+		if n:
+			for i in range(n):
+				logg.info("  %s%s" % (SDL_JoystickNameForIndex(i), " (gamecontroller)"*SDL_IsGameController(i)))
+
+			#j = SDL_GameControllerOpen(self.conf.joystick_index)
+			#if not j:
+			#    print("Could not open gamecontroller %i: %s" % (i, SDL_GetError()));
+
+			joy = SDL_JoystickOpen(self.conf.joystick_index)
+
+			if joy:
+				logg.info("")
+				logg.info("opened joystick %i (%s)" % (joystick_index, SDL_JoystickName(joy)))
+				logg.info("  num axes   : %d" % SDL_JoystickNumAxes(joy))
+				logg.info("  num buttons: %d" % SDL_JoystickNumButtons(joy))
+				logg.info("  num balls  : %d" % SDL_JoystickNumBalls(joy))
+				logg.info("")
+			else:
+				logg.info("Could not open Joystick %i: %s" % (self.conf.joystick_index, SDL_GetError()))
+
+			return joy
+		else:
+			return None
+
 	def run(self):
 		""" this is the entry-point """
 
 		logg.info("initializing sdl")
-		if SDL_Init(SDL_INIT_VIDEO) != 0:
+		if SDL_Init(SDL_INIT_VIDEO|SDL_INIT_JOYSTICK) != 0:
 			logg.error(SDL_GetError())
 			return -1
+
+		self.joystick = self._open_joystick(self.conf.joystick_index)
 
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
 		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, 4);
@@ -378,6 +441,7 @@ class Main:
 						self.w, self.h = event.window.data1, event.window.data2
 
 				self.mainwindow.event_sdl(event)
+				self.buggy_drive.event_sdl(event)
 
 			t = time.time()
 			self._tick(t - last_t)
@@ -450,10 +514,21 @@ class Conf: pass
 
 
 def main(py_path):
-	conf = Conf()
-	conf.path_data = os.path.normpath( os.path.join(py_path, "data") )
-	conf.path_screenshots = os.path.normpath( os.path.join(py_path, "screenshots") )
-	w = Main(conf, s)
+	c = Conf()
+
+	c.path_data = os.path.normpath( os.path.join(py_path, "data") )
+	c.path_screenshots = os.path.normpath( os.path.join(py_path, "screenshots") )
+
+	c.joystick_index = 0
+	c.joystick_roll_axis = 0
+	c.joystick_pitch_axis = 1
+
+	c.joystick_b_strafe_left = 13
+	c.joystick_b_strafe_right = 14
+	c.joystick_b_move_forward = 11
+	c.joystick_b_move_backward = 12
+
+	w = Main(c, s)
 	w.run()
 
 
