@@ -17,9 +17,11 @@ class BuggyVisualization:
 
 		# calculated values?
 		self.wheel_angle = 0.
+		self.mc_angle = 0.
+		self.mc_dist = 0.
 
 		# default zoom is 2 meters per window width
-		self.zoom = 2.
+		self.zoom = 5.
 
 		self.stipple_pattern = 0x00FF
 
@@ -66,10 +68,13 @@ class BuggyVisualization:
 		self._render_sensor_line(0., 0.,  45., self.dist_right)
 		self._render_sensor_line(0., 0.,  90., self.dist_right_front)
 
+		# render calculated algo values
+		self._render_sensor_line(0., 0., self.mc_angle, self.mc_dist, color=(0.3,0.3,1.0,0.8))
+
 		# draw the car
 		glLineWidth(1.)
-		draw.filled_rectmid3d(0., 0., self.car_width, self.car_length, color=(0.5,0.5,0.5,0.8))
 		self._render_wheels()
+		draw.filled_rectmid3d(0., 0., self.car_width, self.car_length, color=(0.5,0.5,0.5,0.4))
 
 
 		glPopMatrix()
@@ -96,15 +101,16 @@ class BuggyVisualization:
 		draw.filled_rectmid3d(-x, -y, wheel_w, wheel_h, color=wheel_color)
 		draw.filled_rectmid3d( x, -y, wheel_w, wheel_h, color=wheel_color)
 
+		# front wheels
 		glPushMatrix()
 		glTranslatef(-x, y, 0.)
-		glRotatef(self.wheel_angle, 0., 0., 1.)
+		glRotatef(-self.wheel_angle, 0., 0., 1.)
 		draw.filled_rectmid3d(0., 0., wheel_w, wheel_h, color=wheel_color)
 		glPopMatrix()
 
 		glPushMatrix()
 		glTranslatef(x, y, 0.)
-		glRotatef(self.wheel_angle, 0., 0., 1.)
+		glRotatef(-self.wheel_angle, 0., 0., 1.)
 		draw.filled_rectmid3d(0., 0., wheel_w, wheel_h, color=wheel_color)
 		glPopMatrix()
 
@@ -120,3 +126,8 @@ class BuggyVisualization:
 		self.dist_front = dist_front
 		self.dist_right_front = dist_right_front
 		self.dist_right = dist_right
+
+	def set_drivealgo_introspection_values(self, mc_angle, mc_dist):
+		self.mc_angle = mc_angle
+		self.mc_dist = mc_dist
+		self.wheel_angle = mc_angle

@@ -76,28 +76,43 @@ class Telemetry:
 		self.serial = serial # opened serial port. here used for reading ONLY.
 		self.parser = hdlc.HdlcChecksummed()
 		self.graph_channels = []
+		self.all_channels = []
 
 		maxvals = 2.
 		maxvals_raw = 2.
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="left", color=(1., 0.8, 0.8, 1.0))
 		self.graph_channels.append(ch)
+		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="right", color=(0.8, 1., 0.8, 1.0))
 		self.graph_channels.append(ch)
+		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_left", color=(0.8, 0.8, 1.0, 1.0))
 		self.graph_channels.append(ch)
+		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_right", color=(1., 0.8, 0.2, 1.0))
 		self.graph_channels.append(ch)
+		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front", color=(.2, 0.2, 1.0, 1.0))
 		self.graph_channels.append(ch)
+		self.all_channels.append(ch)
+
+
+		ch = self._create_channel(frequency=60, value_min=-180., value_min_raw=-180., value_max=180., value_max_raw=180., legend="mc_angle", color=(.2, 0.2, 1.0, 1.0))
+		self.all_channels.append(ch)
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=10., value_max_raw=10., legend="mc_dist", color=(.2, 0.2, 1.0, 1.0))
+		self.all_channels.append(ch)
 
 		#self.ch2 = self.aniplot.create_channel(frequency=5, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=255., legend="slow data", color=QtGui.QColor(0, 238, 0))
 
 	def get_telemetry_channels(self):
+		return self.all_channels
+
+	def get_graphing_telemetry_channels(self):
 		return self.graph_channels
 
 	def tick(self, dt):
@@ -117,11 +132,15 @@ class Telemetry:
 				time, left, right, front_left, front_right, front, mc_x, mc_y, mc_dist, mc_angle, steer, steerPwm, speed, speedPwm = struct.unpack("<IiiiiiiiiiBiBi", packet[1:])
 
 				d = 1. / 65535 / 100.
-				self.graph_channels[0].append(left * d)
-				self.graph_channels[1].append(right * d)
-				self.graph_channels[2].append(front_left * d)
-				self.graph_channels[3].append(front_right * d)
-				self.graph_channels[4].append(front * d)
+				self.all_channels[0].append(left * d)
+				self.all_channels[1].append(right * d)
+				self.all_channels[2].append(front_left * d)
+				self.all_channels[3].append(front_right * d)
+				self.all_channels[4].append(front * d)
+
+				self.all_channels[5].append(-mc_angle / 65535. + 90.)
+				self.all_channels[6].append(mc_dist * d)
+
 				#print("l %3.2f r %3.2f fl %3.2f fr %3.2f f %3.2f" % (left / FIX_DIV, right / FIX_DIV, front_left / FIX_DIV, front_right / FIX_DIV, front / FIX_DIV))
 				#logg.info("mc(%.2f, %.2f; %.2f, %.2f)\tsteer (%u): %3u drive (%u): %3u\n" % (mc_x / FIX_DIV, mc_y / FIX_DIV, mc_dist / FIX_DIV, mc_angle / FIX_DIV, steer, steerPwm, speed, speedPwm))
 
@@ -257,13 +276,14 @@ class BuggyDrive:
 
 
 class MainWindow:
-	def __init__(self, conf, graph_channels=None):
+	def __init__(self, conf, telemetry_channels=None, graph_channels=None):
 		self.conf = conf
+		self.telemetry_channels = telemetry_channels
+		self.graph_channels = graph_channels
 		self._w, self._h = 0., 0.
 		self.gltext = gltext.GLText(os.path.join(conf.path_data, 'font_proggy_opti_small.txt'))
 		# renders graphs, grids, legend, scrollbar, border.
 		self.grapher = graph_renderer.GraphRenderer(self.gltext)
-		self.graph_channels = graph_channels
 		self.graph_window = None
 
 		self.buggy_vis = buggy_visualization.BuggyVisualization()
@@ -277,15 +297,19 @@ class MainWindow:
 	def tick(self, dt):
 		#self.buggy_vis.set_sensor_values(dist_left, dist_left_front, dist_front, dist_right_front, dist_right)
 
-		if self.graph_channels and self.graph_channels[0].size():
-			minv, maxv, left        = self.graph_channels[0].get(-1)
-			minv, maxv, right       = self.graph_channels[1].get(-1)
-			minv, maxv, left_front  = self.graph_channels[2].get(-1)
-			minv, maxv, right_front = self.graph_channels[3].get(-1)
-			minv, maxv, front       = self.graph_channels[4].get(-1)
+		if self.telemetry_channels and self.telemetry_channels[0].size():
+			minv, maxv, left        = self.telemetry_channels[0].get(-1)
+			minv, maxv, right       = self.telemetry_channels[1].get(-1)
+			minv, maxv, left_front  = self.telemetry_channels[2].get(-1)
+			minv, maxv, right_front = self.telemetry_channels[3].get(-1)
+			minv, maxv, front       = self.telemetry_channels[4].get(-1)
+			minv, maxv, mc_angle    = self.telemetry_channels[5].get(-1)
+			minv, maxv, mc_dist     = self.telemetry_channels[6].get(-1)
 			self.buggy_vis.set_sensor_values(left, left_front, front, right, right_front)
+			self.buggy_vis.set_drivealgo_introspection_values(mc_angle, mc_dist)
 		else:
 			self.buggy_vis.set_sensor_values(0.8, 0.5, 0.2, 0.6, 0.9)
+			self.buggy_vis.set_drivealgo_introspection_values(-10, 1.)
 
 		self.buggy_vis.tick(dt)
 
@@ -379,7 +403,7 @@ class Main:
 
 		self.buggy_drive = BuggyDrive(conf, serial)
 		self.telemetry = Telemetry(self.serial)
-		self.mainwindow = MainWindow(conf, self.telemetry.get_telemetry_channels())
+		self.mainwindow = MainWindow(conf, self.telemetry.get_telemetry_channels(), self.telemetry.get_graphing_telemetry_channels())
 
 		t = time.time()
 
