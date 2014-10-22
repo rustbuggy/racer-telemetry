@@ -59,6 +59,10 @@ except:
 BC_TELEMETRY = 0x01
 CB_MOTOR_COMMAND = 0x02
 
+AUTOMATIC_DEFAULT = 0
+STEERING_PWM_DEFAULT = 90
+DRIVING_PWM_DEFAULT = 92
+
 
 def send_packet(data):
 	data = hdlc.add_checksum(data)
@@ -69,6 +73,15 @@ def send_packet(data):
 def int16_to_float(int16):
     return int16 / 32768.
 
+class CruiseControl:
+	""" Buggy cruise control """
+	def __init__(self):
+		self.automatic = AUTOMATIC_DEFAULT
+		self.steering = STEERING_PWM_DEFAULT
+		self.drive = DRIVING_PWM_DEFAULT
+
+	def motorcommand(self):
+		return struct.pack("<BBBB", CB_MOTOR_COMMAND, self.automatic, self.steering, self.drive)
 
 class Telemetry:
 	""" Read telemetry from the given serial port. """
@@ -197,10 +210,11 @@ class BuggyDrive:
 
 	def tick(self, dt):
 		# send motor commands
+		automatic = 0
 		steering_pwm = self._steering_to_servopwm(self.steering_cur)
 		drive_pwm = self._thrust_to_motorpwm(self.thrust_cur)
-		motor_command = struct.pack("<BBB", CB_MOTOR_COMMAND, steering_pwm, drive_pwm)
-		self._send_packet(motor_command)
+		motor_command = struct.pack("<BBBB", CB_MOTOR_COMMAND, automatic, steering_pwm, drive_pwm)
+		#self._send_packet(motor_command)
 
 	def event_sdl(self, event):
 		joy_axis_changed = False
@@ -287,6 +301,7 @@ class MainWindow:
 		self.graph_window = None
 
 		self.buggy_vis = buggy_visualization.BuggyVisualization()
+		self.cruise_control = CruiseControl()
 
 	def init(self):
 		self.gltext.init()
@@ -385,7 +400,29 @@ class MainWindow:
 			if keys[SDL_SCANCODE_DOWN]:  self.graph_window.move_by_ratio(0., d)
 
 	def event_sdl(self, event):
-		return
+		if event.type == SDL_KEYDOWN:
+			if event.key.keysym.scancode == SDL_SCANCODE_SPACE:
+				self.cruise_control.automatic = 1
+				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
+				self.cruise_control.drive = 105
+
+			elif event.key.keysym.scancode == SDL_SCANCODE_A:
+				self.cruise_control.automatic = 1
+				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
+				self.cruise_control.drive = self.cruise_control.drive + 1
+				print 'speed %u' % self.cruise_control.drive
+			elif event.key.keysym.scancode == SDL_SCANCODE_Z:
+				self.cruise_control.automatic = 1
+				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
+				self.cruise_control.drive = self.cruise_control.drive - 1
+				print 'speed %u' % self.cruise_control.drive
+			else:
+				# full stop
+				self.cruise_control.automatic = 0
+				self.cruise_control.steering = STEERING_PWM_DEFAULT
+				self.cruise_control.drive = DRIVING_PWM_DEFAULT
+
+			send_packet(self.cruise_control.motorcommand())
 
 	def gl_coordinates(self, x, y):
 		""" used by graph_renderer for some unremembered reason """
