@@ -63,8 +63,8 @@ class BuggyVisualization:
 		self._render_sensor_line(0., 0., -90., self.dist_left)
 		self._render_sensor_line(0., 0., -45., self.dist_left_front)
 		self._render_sensor_line(0., 0.,   0., self.dist_front)
-		self._render_sensor_line(0., 0.,  45., self.dist_right_front)
-		self._render_sensor_line(0., 0.,  90., self.dist_right)
+		self._render_sensor_line(0., 0.,  45., self.dist_right)
+		self._render_sensor_line(0., 0.,  90., self.dist_right_front)
 
 		# draw the car
 		glLineWidth(1.)
