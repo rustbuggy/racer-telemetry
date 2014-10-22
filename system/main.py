@@ -142,7 +142,7 @@ class Telemetry:
 		for packet in self.parser:
 			header, = struct.unpack("<B", packet[:1])
 			if header == BC_TELEMETRY:
-				time, left, right, front_left, front_right, front, mc_x, mc_y, mc_dist, mc_angle, steer, steerPwm, speed, speedPwm = struct.unpack("<IiiiiiiiiiBiBi", packet[1:])
+				time, left, right, front_left, front_right, front, mc_x, mc_y, mc_dist, mc_angle, steerPwm, speedPwm = struct.unpack("<Iiiiiiiiiiii", packet[1:])
 
 				d = 1. / 65535 / 100.
 				self.all_channels[0].append(left * d)
@@ -155,7 +155,7 @@ class Telemetry:
 				self.all_channels[6].append(mc_dist * d)
 
 				#print("l %3.2f r %3.2f fl %3.2f fr %3.2f f %3.2f" % (left / FIX_DIV, right / FIX_DIV, front_left / FIX_DIV, front_right / FIX_DIV, front / FIX_DIV))
-				#logg.info("mc(%.2f, %.2f; %.2f, %.2f)\tsteer (%u): %3u drive (%u): %3u\n" % (mc_x / FIX_DIV, mc_y / FIX_DIV, mc_dist / FIX_DIV, mc_angle / FIX_DIV, steer, steerPwm, speed, speedPwm))
+				#logg.info("mc(%.2f, %.2f; %.2f, %.2f)\tsteer: %3u drive: %3u\n" % (mc_x / FIX_DIV, mc_y / FIX_DIV, mc_dist / FIX_DIV, mc_angle / FIX_DIV, steerPwm, speedPwm))
 
 	def _create_channel(self, frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255., legend="graph", unit="V", color=(0.5, 1., 0.5, 1.)):
 		''' Returns GraphChannel object.
