@@ -1,3 +1,10 @@
+"""
+Render the buggy top-view with sensor-data.
+"""
+
+import logging
+logg = logging.getLogger(__name__)
+
 import math
 from copengl import *
 import draw
@@ -62,11 +69,11 @@ class BuggyVisualization:
 		glLineStipple(1, self.stipple_pattern);
 		glEnable(GL_LINE_STIPPLE)
 
-		self._render_sensor_line(0., 0., -90., self.dist_left)
-		self._render_sensor_line(0., 0., -45., self.dist_left_front)
-		self._render_sensor_line(0., 0.,   0., self.dist_front)
-		self._render_sensor_line(0., 0.,  45., self.dist_right)
-		self._render_sensor_line(0., 0.,  90., self.dist_right_front)
+		self._render_sensor_line(-0.03,   0., -45., self.dist_left)
+		self._render_sensor_line(-0.03, 0.05, -30., self.dist_left_front)
+		self._render_sensor_line(   0., 0.05,   0., self.dist_front)
+		self._render_sensor_line( 0.03, 0.05,  30., self.dist_right_front)
+		self._render_sensor_line( 0.03,   0.,  45., self.dist_right)
 
 		# render calculated algo values
 		self._render_sensor_line(0., 0., self.mc_angle, self.mc_dist, color=(0.3,0.3,1.0,0.8))

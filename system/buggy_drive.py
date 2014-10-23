@@ -3,7 +3,7 @@ Handle controls (joystick, keyboard) and send drive commands to the given serial
 """
 
 import logging
-log = logging.getLogger(__name__)
+logg = logging.getLogger(__name__)
 
 import struct
 from sdl2 import *
@@ -54,13 +54,13 @@ class BuggyDrive:
 				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
 				self.cruise_control.drive = self.cruise_control.drive + 1
 				keypressed = True
-				log.info("speed %u", self.cruise_control.drive)
+				logg.info("speed %u", self.cruise_control.drive)
 			elif event.key.keysym.scancode == SDL_SCANCODE_Z:
 				self.cruise_control.automatic = 1
 				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
 				self.cruise_control.drive = self.cruise_control.drive - 1
 				keypressed = True
-				log.info("speed %u", self.cruise_control.drive)
+				logg.info("speed %u", self.cruise_control.drive)
 			else:
 				# full stop
 				self.cruise_control.automatic = 0

@@ -1,5 +1,5 @@
 import logging
-log = logging.getLogger(__name__)
+logg = logging.getLogger(__name__)
 
 import os
 from sdl2 import *

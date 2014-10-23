@@ -19,22 +19,17 @@ from OpenGL.GL import *
 
 from PIL import Image
 
-
-import fps_counter
-
 sys.path.append('extlib/common/python/lib')
 sys.path.append('extlib/libaniplot')
 sys.path.append('extlib/libcopengl')
 sys.path.append('extlib/libgltext/pywrapper')
 
 import hdlc
-import gltext
+import fps_counter
 
-from aniplot import graph_window
-from aniplot import graph_renderer
-from aniplot import graph_channel
-
-import buggy_visualization
+import buggy_drive
+import main_window
+import telemetry_stream
 
 
 parser = argparse.ArgumentParser(description="RustTelemetry", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -55,377 +50,8 @@ except:
 	s = DummySerial()
 
 
-# header bytes
-BC_TELEMETRY = 0x01
-CB_MOTOR_COMMAND = 0x02
-
-AUTOMATIC_DEFAULT = 0
-STEERING_PWM_DEFAULT = 90
-DRIVING_PWM_DEFAULT = 92
-
-
-def send_packet(data):
-	data = hdlc.add_checksum(data)
-	data = hdlc.escape_delimit(data)
-	s.write(data)
-
-
 def int16_to_float(int16):
     return int16 / 32768.
-
-class CruiseControl:
-	""" Buggy cruise control """
-	def __init__(self):
-		self.automatic = AUTOMATIC_DEFAULT
-		self.steering = STEERING_PWM_DEFAULT
-		self.drive = DRIVING_PWM_DEFAULT
-
-	def motorcommand(self):
-		return struct.pack("<BBBB", CB_MOTOR_COMMAND, self.automatic, self.steering, self.drive)
-
-class Telemetry:
-	""" Read telemetry from the given serial port. """
-	def __init__(self, serial):
-		self.serial = serial # opened serial port. here used for reading ONLY.
-		self.parser = hdlc.HdlcChecksummed()
-		self.graph_channels = []
-		self.all_channels = []
-
-		maxvals = 2.
-		maxvals_raw = 2.
-
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="left", color=(1., 0.8, 0.8, 1.0))
-		self.graph_channels.append(ch)
-		self.all_channels.append(ch)
-
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="right", color=(0.8, 1., 0.8, 1.0))
-		self.graph_channels.append(ch)
-		self.all_channels.append(ch)
-
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_left", color=(0.8, 0.8, 1.0, 1.0))
-		self.graph_channels.append(ch)
-		self.all_channels.append(ch)
-
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_right", color=(1., 0.8, 0.2, 1.0))
-		self.graph_channels.append(ch)
-		self.all_channels.append(ch)
-
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front", color=(.2, 0.2, 1.0, 1.0))
-		self.graph_channels.append(ch)
-		self.all_channels.append(ch)
-
-
-		ch = self._create_channel(frequency=60, value_min=-180., value_min_raw=-180., value_max=180., value_max_raw=180., legend="mc_angle", color=(.2, 0.2, 1.0, 1.0))
-		self.all_channels.append(ch)
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=10., value_max_raw=10., legend="mc_dist", color=(.2, 0.2, 1.0, 1.0))
-		self.all_channels.append(ch)
-
-		#self.ch2 = self.aniplot.create_channel(frequency=5, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=255., legend="slow data", color=QtGui.QColor(0, 238, 0))
-
-	def get_telemetry_channels(self):
-		return self.all_channels
-
-	def get_graphing_telemetry_channels(self):
-		return self.graph_channels
-
-	def tick(self, dt):
-
-		#t = time.time()
-		#self.graph_channels[0].append( math.sin(t / 0.1) )
-		#self.graph_channels[1].append( math.sin(t / 0.1324) )
-
-
-		# read serial
-		data = self.serial.read(200)
-		self.parser.put(data)
-
-		for packet in self.parser:
-			header, = struct.unpack("<B", packet[:1])
-			if header == BC_TELEMETRY:
-				time, left, right, front_left, front_right, front, mc_x, mc_y, mc_dist, mc_angle, steerPwm, speedPwm = struct.unpack("<Iiiiiiiiiiii", packet[1:])
-
-				d = 1. / 65535 / 100.
-				self.all_channels[0].append(left * d)
-				self.all_channels[1].append(right * d)
-				self.all_channels[2].append(front_left * d)
-				self.all_channels[3].append(front_right * d)
-				self.all_channels[4].append(front * d)
-
-				self.all_channels[5].append(-mc_angle / 65535. + 90.)
-				self.all_channels[6].append(mc_dist * d)
-
-				#print("l %3.2f r %3.2f fl %3.2f fr %3.2f f %3.2f" % (left / FIX_DIV, right / FIX_DIV, front_left / FIX_DIV, front_right / FIX_DIV, front / FIX_DIV))
-				#logg.info("mc(%.2f, %.2f; %.2f, %.2f)\tsteer: %3u drive: %3u\n" % (mc_x / FIX_DIV, mc_y / FIX_DIV, mc_dist / FIX_DIV, mc_angle / FIX_DIV, steerPwm, speedPwm))
-
-	def _create_channel(self, frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255., legend="graph", unit="V", color=(0.5, 1., 0.5, 1.)):
-		''' Returns GraphChannel object.
-
-			"frequency"     : sampling frequency
-			"value_min"     : is minimum real value, for example it can be in V
-			"value_min_raw" : is minimum raw value from ADC that corresponds to real "value_min"
-			"value_max"     : is maximum real value, for example it can be in V
-			"value_max_raw" : is maximum raw value from ADC that corresponds to real "value_max"
-
-			For example with 10 bit ADC with AREF of 3.3 V these values are: value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.
-
-			Use case:
-				plotter = AniplotWidget()
-				ch1 = plotter.create_channel(frequency=1000, value_min=0., value_min_raw=0., value_max=5., value_max_raw=255.)
-				ch2 = plotter.create_channel(frequency=500, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=1023.)
-				plotter.start()
-
-				while 1:
-					sample1 = some_source1.get()
-					sample2 = some_source2.get()
-					if sample1:
-						ch1.append(sample1)
-					if sample2:
-						ch2.append(sample2)
-
-			Data can be appended also with custom timestamp: ch1.append(sample1, time.time())
-		'''
-		channel = graph_channel.GraphChannel(frequency=frequency, legend=legend, unit=unit, color=color)
-		channel.set_mapping(value_min=value_min, value_min_raw=value_min_raw, value_max=value_max, value_max_raw=value_max_raw)
-		return channel
-
-
-class BuggyDrive:
-	def __init__(self, conf, serial):
-		self.conf = conf
-		self.serial = serial # opened serial port. here used for sending ONLY.
-		self.thrust_max = 10.
-		self.thrust_min = -10.
-		self.steering_max = 45. # degrees
-		self.steering_min = -self.steering_max
-
-		self.steering_max_pwm = 140.
-		self.steering_min_pwm = 40.
-		self.thrust_max_pwm = 135.
-		self.thrust_min_pwm = 255.
-
-		self.steering_cur = 0. # current front wheel steering pos degrees
-		self.thrust_cur = 0.
-
-		self.log_raw_data = False
-
-	def tick(self, dt):
-		# send motor commands
-		automatic = 0
-		steering_pwm = self._steering_to_servopwm(self.steering_cur)
-		drive_pwm = self._thrust_to_motorpwm(self.thrust_cur)
-		motor_command = struct.pack("<BBBB", CB_MOTOR_COMMAND, automatic, steering_pwm, drive_pwm)
-		#self._send_packet(motor_command)
-
-	def event_sdl(self, event):
-		joy_axis_changed = False
-		if event.type == SDL_JOYAXISMOTION:
-			if event.jaxis.axis == self.conf.joystick_roll_axis:
-				joy_axis_changed = True
-				roll_axis = int16_to_float(event.jaxis.value)
-			elif event.jaxis.axis == self.conf.joystick_pitch_axis:
-				joy_axis_changed = True
-				pitch_axis = int16_to_float(event.jaxis.value)
-			logg.info("axis %i val %5.2f" % (event.jaxis.axis, int16_to_float(event.jaxis.value)))
-
-		if event.type == SDL_JOYBUTTONDOWN:
-			logg.info("joy button %i pressed", event.jbutton.button)
-
-		#if joy_axis_changed:
-		#	logg.info("pitch %5.2f roll %5.2f" % (pitch_axis, roll_axis))
-
-	def handle_controls(self, dt, keys):
-		acceleration = 5.
-		friction_deceleration = .5 # deceleration when no accelerate button is pressed
-		steering_speed = 20. # degrees per second
-		steering_back_speed = 20. # how fast to restore the zero-steer if no left/right button is pressed
-
-		if keys[SDL_SCANCODE_LEFT] or keys[SDL_SCANCODE_RIGHT]:
-			if keys[SDL_SCANCODE_LEFT]:
-				self.steering_cur -= steering_speed * dt
-			if keys[SDL_SCANCODE_RIGHT]:
-				self.steering_cur += steering_speed * dt
-		else:
-			self.steering_cur = self._ease_linear_to(0, self.steering_cur, dt * steering_back_speed)
-
-		if keys[SDL_SCANCODE_UP] or keys[SDL_SCANCODE_DOWN]:
-			if keys[SDL_SCANCODE_UP]:
-				self.thrust_cur += acceleration * dt
-			if keys[SDL_SCANCODE_DOWN]:
-				self.thrust_cur -= acceleration * dt
-		else:
-			self.thrust_cur = self._ease_linear_to(0, self.thrust_cur, dt * friction_deceleration)
-
-		# limits
-
-		self.steering_cur = min(self.steering_cur, self.steering_max)
-		self.steering_cur = max(self.steering_cur, self.steering_min)
-
-		self.thrust_cur = min(self.thrust_cur, self.thrust_max)
-		self.thrust_cur = max(self.thrust_cur, self.thrust_min)
-
-	def _send_packet(self, data):
-		data = hdlc.add_checksum(data)
-		data = hdlc.escape_delimit(data)
-		if self.log_raw_data:
-			logg.info("snd %02i: %s", len(data), data.encode("hex").upper())
-		self.serial.write(data)
-
-	def _ease_linear_to(self, dest, src, amount):
-		if dest >= src:
-			return src + amount if src + amount < dest else dest
-		else:
-			return src - amount if src - amount > dest else dest
-
-	def _thrust_to_motorpwm(self, speed):
-		motorpwm = self.thrust_min_pwm + (self.thrust_cur - self.thrust_min) / (self.thrust_max - self.thrust_min) * (self.thrust_max_pwm - self.thrust_min_pwm)
-		assert motorpwm < 256.
-		assert motorpwm > 134.
-		return motorpwm
-
-	def _steering_to_servopwm(self, angle):
-		servopwm = self.steering_min_pwm + (self.steering_cur - self.steering_min) / (self.steering_max - self.steering_min) * (self.steering_max_pwm - self.steering_min_pwm)
-		assert servopwm < 141.
-		assert servopwm > 39.
-		return servopwm
-
-
-class MainWindow:
-	def __init__(self, conf, telemetry_channels=None, graph_channels=None):
-		self.conf = conf
-		self.telemetry_channels = telemetry_channels
-		self.graph_channels = graph_channels
-		self._w, self._h = 0., 0.
-		self.gltext = gltext.GLText(os.path.join(conf.path_data, 'font_proggy_opti_small.txt'))
-		# renders graphs, grids, legend, scrollbar, border.
-		self.grapher = graph_renderer.GraphRenderer(self.gltext)
-		self.graph_window = None
-
-		self.buggy_vis = buggy_visualization.BuggyVisualization()
-		self.cruise_control = CruiseControl()
-
-	def init(self):
-		self.gltext.init()
-		self.grapher.setup(self.graph_channels)
-		# converts input events to smooth zoom/movement of the graph.
-		self.graph_window = graph_window.GraphWindow(self, font=self.gltext, graph_renderer=self.grapher, keys=None, x=0, y=0, w=10, h=10)
-
-	def tick(self, dt):
-		#self.buggy_vis.set_sensor_values(dist_left, dist_left_front, dist_front, dist_right_front, dist_right)
-
-		if self.telemetry_channels and self.telemetry_channels[0].size():
-			minv, maxv, left        = self.telemetry_channels[0].get(-1)
-			minv, maxv, right       = self.telemetry_channels[1].get(-1)
-			minv, maxv, left_front  = self.telemetry_channels[2].get(-1)
-			minv, maxv, right_front = self.telemetry_channels[3].get(-1)
-			minv, maxv, front       = self.telemetry_channels[4].get(-1)
-			minv, maxv, mc_angle    = self.telemetry_channels[5].get(-1)
-			minv, maxv, mc_dist     = self.telemetry_channels[6].get(-1)
-			self.buggy_vis.set_sensor_values(left, left_front, front, right, right_front)
-			self.buggy_vis.set_drivealgo_introspection_values(mc_angle, mc_dist)
-		else:
-			self.buggy_vis.set_sensor_values(0.8, 0.5, 0.2, 0.6, 0.9)
-			self.buggy_vis.set_drivealgo_introspection_values(-10, 1.)
-
-		self.buggy_vis.tick(dt)
-
-	def render(self, window_w, window_h, fps):
-		self._w, self._h = window_w, window_h
-
-		w, h = window_w, window_h
-		if w <= 20 or h <= 20:
-			return
-
-		self.grapher.tick()
-		self.graph_window.tick()
-
-		#glClearColor(0.3, 0.3, 0.3, 1.0)
-		#glClearColor(0.2, 0.2, 0.2, 1.0)
-		glClearColor(.25, .25, .25, 1.0)
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
-
-		# render buggy visualization window
-		#glDisable(GL_DEPTH_TEST)
-		#glDisable(GL_LIGHTING)
-
-		glViewport(0, int(h / 2.), w, int(h / 2.))
-		self.buggy_vis.render(w, int(h/2.))
-
-
-
-		# render graph window
-
-
-		glViewport(0, 0, w, h)
-
-		glMatrixMode(GL_PROJECTION)
-		glLoadIdentity()
-		glOrtho(0., w, h, 0., -100, 100)
-
-		glDisable(GL_DEPTH_TEST)
-		glDisable(GL_TEXTURE_2D)
-		glDisable(GL_LIGHTING)
-
-		glMatrixMode(GL_MODELVIEW)
-		glLoadIdentity()
-		glScalef(1.,1.,-1.)
-
-		self.graph_window.x = -1
-		self.graph_window.y = int(h / 2.)
-		self.graph_window.w = w + 2
-		self.graph_window.h = int(h / 2.) + 2
-
-		# render 2d objects
-
-		glDisable(GL_DEPTH_TEST)
-		glDisable(GL_TEXTURE_2D)
-
-		self.graph_window.render()
-
-		glEnable(GL_TEXTURE_2D)
-		self.gltext.drawbr("fps: %.0f" % fps, w, h, fgcolor = (.9, .9, .9, 1.), bgcolor = (0.3, 0.3, 0.3, .0))
-		self.gltext.drawbm("usage: arrows, shift, mouse", w/2, h-3, fgcolor = (.5, .5, .5, 1.), bgcolor = (0., 0., 0., .0))
-
-	def handle_controls(self, dt, keys):
-		d = 1. * dt
-		if keys[SDL_SCANCODE_LSHIFT] or keys[SDL_SCANCODE_RSHIFT]:
-			if keys[SDL_SCANCODE_LEFT]:  self.graph_window.zoom_out(d, 0.)
-			if keys[SDL_SCANCODE_RIGHT]: self.graph_window.zoom_in(d, 0.)
-			if keys[SDL_SCANCODE_UP]:    self.graph_window.zoom_in(0., d)
-			if keys[SDL_SCANCODE_DOWN]:  self.graph_window.zoom_out(0., d)
-		else:
-			if keys[SDL_SCANCODE_LEFT]:  self.graph_window.move_by_ratio(-d, 0.)
-			if keys[SDL_SCANCODE_RIGHT]: self.graph_window.move_by_ratio(d, 0.)
-			if keys[SDL_SCANCODE_UP]:    self.graph_window.move_by_ratio(0., -d)
-			if keys[SDL_SCANCODE_DOWN]:  self.graph_window.move_by_ratio(0., d)
-
-	def event_sdl(self, event):
-		if event.type == SDL_KEYDOWN:
-			if event.key.keysym.scancode == SDL_SCANCODE_SPACE:
-				self.cruise_control.automatic = 1
-				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
-				self.cruise_control.drive = 113
-			elif event.key.keysym.scancode == SDL_SCANCODE_A:
-				self.cruise_control.automatic = 1
-				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
-				self.cruise_control.drive = self.cruise_control.drive + 1
-				print 'speed %u' % self.cruise_control.drive
-			elif event.key.keysym.scancode == SDL_SCANCODE_Z:
-				self.cruise_control.automatic = 1
-				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
-				self.cruise_control.drive = self.cruise_control.drive - 1
-				print 'speed %u' % self.cruise_control.drive
-			else:
-				# full stop
-				self.cruise_control.automatic = 0
-				self.cruise_control.steering = STEERING_PWM_DEFAULT
-				self.cruise_control.drive = DRIVING_PWM_DEFAULT
-
-			send_packet(self.cruise_control.motorcommand())
-
-	def gl_coordinates(self, x, y):
-		""" used by graph_renderer for some unremembered reason """
-		return x, self._h - y
 
 
 class Main:
@@ -437,9 +63,9 @@ class Main:
 		self.keys = None
 		self.joystick = None
 
-		self.buggy_drive = BuggyDrive(conf, serial)
-		self.telemetry = Telemetry(self.serial)
-		self.mainwindow = MainWindow(conf, self.telemetry.get_telemetry_channels(), self.telemetry.get_graphing_telemetry_channels())
+		self.buggy_drive = buggy_drive.BuggyDrive(conf, serial)
+		self.telemetry = telemetry_stream.TelemetryStream(self.serial)
+		self.mainwindow = main_window.MainWindow(conf, self.telemetry.get_telemetry_channels(), self.telemetry.get_graphing_telemetry_channels())
 
 		t = time.time()
 
@@ -609,10 +235,10 @@ class Main:
 #                     "Missing file",
 #                     "File is missing. Please reinstall the program.",
 #                     None);
-class Conf: pass
 
 
 def main(py_path):
+	class Conf: pass
 	c = Conf()
 
 	c.path_data = os.path.normpath( os.path.join(py_path, "data") )

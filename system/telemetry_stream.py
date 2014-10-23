@@ -3,7 +3,7 @@ Read telemetry data from the given serial port and save it in internal graph_cha
 """
 
 import logging
-log = logging.getLogger(__name__)
+logg = logging.getLogger(__name__)
 
 import struct
 
@@ -21,41 +21,39 @@ class TelemetryStream:
 		self.all_channels = []
 
 		maxvals = 1.
-		maxvals_raw = 1.
+		maxvals_raw = 2. # this is used for distance sensors. max dist
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="left", color=(1., 0.8, 0.8, 1.0))
-		self.graph_channels.append(ch)
+		#self.graph_channels.append(ch)
 		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="right", color=(0.8, 1., 0.8, 1.0))
-		self.graph_channels.append(ch)
+		#self.graph_channels.append(ch)
 		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_left", color=(0.8, 0.8, 1.0, 1.0))
-		self.graph_channels.append(ch)
+		#self.graph_channels.append(ch)
 		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front_right", color=(1., 0.8, 0.2, 1.0))
-		self.graph_channels.append(ch)
+		#self.graph_channels.append(ch)
 		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="front", color=(.2, 0.2, 1.0, 1.0))
 		self.graph_channels.append(ch)
 		self.all_channels.append(ch)
 
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="speed_pwm", color=(1.0, 1.0, 1.0, 1.0))
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=180., legend="speed_pwm", color=(1.0, 1.0, 1.0, 1.0))
 		self.graph_channels.append(ch)
 		self.all_channels.append(ch)
 
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=maxvals_raw, legend="steer_pwm", color=(0., 1.0, 0.3, 1.0))
+		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=maxvals, value_max_raw=180., legend="steer_pwm", color=(0., 1.0, 0.3, 1.0))
 		self.graph_channels.append(ch)
 		self.all_channels.append(ch)
 
 		ch = self._create_channel(frequency=60, value_min=-180., value_min_raw=-180., value_max=180., value_max_raw=180., legend="mc_angle", color=(.2, 0.2, 1.0, 1.0))
 		self.all_channels.append(ch)
 		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=10., value_max_raw=10., legend="mc_dist", color=(.2, 0.2, 1.0, 1.0))
-		self.all_channels.append(ch)
-		ch = self._create_channel(frequency=60, value_min=0., value_min_raw=0., value_max=10., value_max_raw=10., legend="steer_pwm", color=(1.0, 1.0, 1.0, 1.0))
 		self.all_channels.append(ch)
 
 		#self.ch2 = self.aniplot.create_channel(frequency=5, value_min=0., value_min_raw=0., value_max=3.3, value_max_raw=255., legend="slow data", color=QtGui.QColor(0, 238, 0))
@@ -88,8 +86,8 @@ class TelemetryStream:
 				self.all_channels[2].append(front_left * d)
 				self.all_channels[3].append(front_right * d)
 				self.all_channels[4].append(front * d)
-				self.all_channels[5].append(speed_pwm * d)
-				self.all_channels[6].append(steer_pwm * d)
+				self.all_channels[5].append(speed_pwm)
+				self.all_channels[6].append(steer_pwm)
 
 				self.all_channels[7].append(-mc_angle / 65535. + 90.)
 				self.all_channels[8].append(mc_dist * d)
