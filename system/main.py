@@ -404,8 +404,7 @@ class MainWindow:
 			if event.key.keysym.scancode == SDL_SCANCODE_SPACE:
 				self.cruise_control.automatic = 1
 				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
-				self.cruise_control.drive = 105
-
+				self.cruise_control.drive = 113
 			elif event.key.keysym.scancode == SDL_SCANCODE_A:
 				self.cruise_control.automatic = 1
 				self.cruise_control.steering = STEERING_PWM_DEFAULT # center
