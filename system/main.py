@@ -42,12 +42,14 @@ try:
 	s = serial.Serial(args.port, 57600, timeout=0);
 	s.flushInput()
 	s.flushOutput()
+	g_fake_serial = False
 except:
-	logg.exception("using fake serial")
+	logg.exception("using fake serial and fake telemetry")
 	class DummySerial:
 		def read(self, n): return ""
 		def write(self, data): pass
 	s = DummySerial()
+	g_fake_serial = True
 
 
 def int16_to_float(int16):
@@ -64,8 +66,8 @@ class Main:
 		self.joystick = None
 
 		self.buggy_drive = buggy_drive.BuggyDrive(conf, serial)
-		self.telemetry = telemetry_stream.TelemetryStream(self.serial)
-		self.mainwindow = main_window.MainWindow(conf, self.telemetry.get_telemetry_channels(), self.telemetry.get_graphing_telemetry_channels())
+		self.telemetry = telemetry_stream.TelemetryStream(self.serial, fake_telemetry=g_fake_serial)
+		self.mainwindow = main_window.MainWindow(conf, self.telemetry, self.telemetry.get_telemetry_channels(), self.telemetry.get_graphing_telemetry_channels())
 
 		t = time.time()
 
@@ -168,14 +170,16 @@ class Main:
 				self.mainwindow.event_sdl(event)
 				self.buggy_drive.event_sdl(event)
 
-			t = time.time()
-			self._tick(t - last_t)
-			last_t = t
+			if running:
+				t = time.time()
+				self._tick(t - last_t)
+				last_t = t
 
-			#glFinish()
-			SDL_GL_SwapWindow(window)
-			#SDL_Delay(10)
+				#glFinish()
+				SDL_GL_SwapWindow(window)
+				#SDL_Delay(10)
 
+		self.mainwindow.stop()
 		SDL_GL_DeleteContext(context)
 		SDL_DestroyWindow(window)
 		SDL_Quit()
@@ -198,7 +202,7 @@ class Main:
 		self.buggy_drive.handle_controls(dt, self.keys)
 		self.buggy_drive.tick(dt)
 		self.mainwindow.handle_controls(dt, self.keys)
-		self.mainwindow.tick(dt)
+		self.mainwindow.tick(dt, self.telemetry.get_packet_count())
 		self.fpscounter.tick(dt)
 
 		# render frame
@@ -243,6 +247,8 @@ def main(py_path):
 
 	c.path_data = os.path.normpath( os.path.join(py_path, "data") )
 	c.path_screenshots = os.path.normpath( os.path.join(py_path, "screenshots") )
+	c.camera_name = "Logitech Camera"
+	c.camera_resolution = (640, 480)
 
 	c.joystick_index = 0
 	c.joystick_roll_axis = 0

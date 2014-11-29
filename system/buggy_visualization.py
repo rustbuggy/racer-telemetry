@@ -27,8 +27,8 @@ class BuggyVisualization:
 		self.mc_angle = 0.
 		self.mc_dist = 0.
 
-		# default zoom is 2 meters per window width
-		self.zoom = 5.
+		## default zoom is 2 meters per window width
+		self.zoom = 3.
 
 		self.stipple_pattern = 0x00FF
 
@@ -69,11 +69,11 @@ class BuggyVisualization:
 		glLineStipple(1, self.stipple_pattern);
 		glEnable(GL_LINE_STIPPLE)
 
-		self._render_sensor_line(-0.03,   0., -45., self.dist_left)
-		self._render_sensor_line(-0.03, 0.05, -30., self.dist_left_front)
+		self._render_sensor_line(-0.03,   0., -60., self.dist_left)
+		self._render_sensor_line(-0.03, 0.05, -45., self.dist_left_front)
 		self._render_sensor_line(   0., 0.05,   0., self.dist_front)
-		self._render_sensor_line( 0.03, 0.05,  30., self.dist_right_front)
-		self._render_sensor_line( 0.03,   0.,  45., self.dist_right)
+		self._render_sensor_line( 0.03, 0.05,  45., self.dist_right_front)
+		self._render_sensor_line( 0.03,   0.,  60., self.dist_right)
 
 		# render calculated algo values
 		self._render_sensor_line(0., 0., self.mc_angle, self.mc_dist, color=(0.3,0.3,1.0,0.8))
